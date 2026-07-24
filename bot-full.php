@@ -96,6 +96,9 @@ class TelegramAPI {
         $this->user_id = $user_id;
     }
 
+    /**
+     * ارسال پیام
+     */
     public function sendMessage($text, $chat_id = null, $keyboard = null, $parse_mode = 'HTML') {
         $chat_id = $chat_id ?? $this->chat_id;
 
@@ -112,6 +115,9 @@ class TelegramAPI {
         return $this->makeRequest('sendMessage', $data);
     }
 
+    /**
+     * ویرایش پیام
+     */
     public function editMessage($message_id, $text, $chat_id = null, $keyboard = null, $parse_mode = 'HTML') {
         $chat_id = $chat_id ?? $this->chat_id;
 
@@ -129,6 +135,9 @@ class TelegramAPI {
         return $this->makeRequest('editMessageText', $data);
     }
 
+    /**
+     * حذف پیام
+     */
     public function deleteMessage($message_id, $chat_id = null) {
         $chat_id = $chat_id ?? $this->chat_id;
 
@@ -140,12 +149,23 @@ class TelegramAPI {
         return $this->makeRequest('deleteMessage', $data);
     }
 
+    /**
+     * ساخت کیبورد اینلاین
+     */
     public static function inlineKeyboard($buttons) {
         return [
             'inline_keyboard' => $buttons
         ];
     }
 
+    /**
+     * ساخت دکمه اینلاین
+     *
+     * باگ نسخه قبلی: کلید callback_query_id در دکمه ست می‌شد که اصلاً
+     * جزو ساختار معتبر دکمه‌های تلگرام نیست و باعث می‌شد بعضی کلاینت‌ها/کتابخانه‌ها
+     * دکمه را نامعتبر تشخیص بدهند یا رفتار غیرمنتظره نشان دهند.
+     * تنها فیلدهای معتبر: text + (callback_data یا url)
+     */
     public static function inlineButton($text, $callback_data, $url = null) {
         $button = ['text' => $text];
 
@@ -158,6 +178,13 @@ class TelegramAPI {
         return $button;
     }
 
+    /**
+     * ارسال تاس واقعی تلگرام (انیمیشن + مقدار تصادفی رسمی تلگرام)
+     * این خیلی بهتر از تولید عدد رندوم دستی در PHP است، چون کاربر
+     * انیمیشن واقعی تاس را می‌بیند و مقدار از سمت تلگرام تضمین می‌شود.
+     * emoji می‌تواند 🎲 (۱ تا ۶) یا 🎯 🏀 ⚽ 🎳 🎰 باشد.
+     * مقدار خروجی را از: $result['result']['dice']['value'] بخوانید.
+     */
     public function sendDice($chat_id, $emoji = '🎲') {
         return $this->makeRequest('sendDice', [
             'chat_id' => $chat_id,
@@ -165,6 +192,9 @@ class TelegramAPI {
         ]);
     }
 
+    /**
+     * پاسخ به callback_query
+     */
     public function answerCallbackQuery($callback_query_id, $text = null, $show_alert = false) {
         $data = [
             'callback_query_id' => $callback_query_id,
@@ -178,20 +208,34 @@ class TelegramAPI {
         return $this->makeRequest('answerCallbackQuery', $data);
     }
 
+    /**
+     * درخواست اطلاعات ربات
+     */
     public function getMe() {
         return $this->makeRequest('getMe', []);
     }
 
+    /**
+     * دریافت اطلاعات چت
+     */
     public function getChat($chat_id = null) {
         $chat_id = $chat_id ?? $this->chat_id;
         return $this->makeRequest('getChat', ['chat_id' => $chat_id]);
     }
 
+    /**
+     * تایید صحت درخواست وبهوک با استفاده از secret token
+     * (باید هنگام setWebhook مقدار secret_token را هم ست کنید)
+     * جلوگیری می‌کند از این‌که هرکسی با دانستن آدرس webhook، آپدیت جعلی بفرستد.
+     */
     public function verifyWebhookSecret($expectedSecret) {
         $received = $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'] ?? null;
         return $received !== null && hash_equals($expectedSecret, $received);
     }
 
+    /**
+     * ارسال درخواست API
+     */
     private function makeRequest($method, $data = []) {
         $url = $this->api_url . $method;
 
@@ -199,6 +243,8 @@ class TelegramAPI {
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        // امنیت: تایید گواهی SSL باید فعال باشد. غیرفعال کردن آن
+        // ریسک حمله MITM را باز می‌کند و در نسخه قبلی به اشتباه false بود.
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
         curl_setopt($ch, CURLOPT_TIMEOUT, 10);
@@ -224,24 +270,48 @@ class TelegramAPI {
         return json_decode($response, true);
     }
 
+    /**
+     * تنظیم chat_id
+     */
     public function setChatId($chat_id) {
         $this->chat_id = $chat_id;
     }
 
+    /**
+     * تنظیم user_id
+     */
     public function setUserId($user_id) {
         $this->user_id = $user_id;
     }
 
+    /**
+     * دریافت user_id
+     */
     public function getUserTelegramId() {
         return $this->user_id;
     }
 
+    /**
+     * دریافت chat_id
+     */
     public function getChatId() {
         return $this->chat_id;
     }
 }
 
 // ==================== User.php ====================
+/**
+ * کلاس User - مدیریت کاربران
+ * User Class - User Management
+ *
+ * تغییرات نسبت به نسخه اصلی:
+ * 1) رفع race condition در subtractBalance: قبلاً ابتدا موجودی چک می‌شد
+ *    و بعد در یک تراکنش جدا کم می‌شد. اگر دو درخواست همزمان (مثلاً دو کلیک
+ *    سریع روی دکمه شرط‌بندی) برسند، هر دو می‌توانستند از چک اولیه رد شوند
+ *    و موجودی کاربر منفی شود (double-spend). حالا کاهش موجودی با یک
+ *    UPDATE اتمیک و شرط balance >= amount در همان کوئری انجام می‌شود.
+ */
+
 class User {
     private $pdo;
     private $telegram_id;
@@ -253,6 +323,9 @@ class User {
         $this->loadUser();
     }
 
+    /**
+     * بارگذاری یا ایجاد کاربر
+     */
     private function loadUser() {
         $stmt = $this->pdo->prepare("SELECT * FROM users WHERE telegram_id = ?");
         $stmt->execute([$this->telegram_id]);
@@ -265,6 +338,9 @@ class User {
         }
     }
 
+    /**
+     * ایجاد کاربر جدید
+     */
     private function createUser() {
         $stmt = $this->pdo->prepare("
             INSERT INTO users (telegram_id, created_at, updated_at)
@@ -274,6 +350,7 @@ class User {
 
         $user_id = $this->pdo->lastInsertId();
 
+        // ایجاد کیف پول برای کاربر
         $wallet_stmt = $this->pdo->prepare("
             INSERT INTO wallets (user_id, balance, created_at, updated_at)
             VALUES (?, 0, NOW(), NOW())
@@ -283,6 +360,9 @@ class User {
         $this->loadUser();
     }
 
+    /**
+     * به‌روزرسانی اطلاعات کاربر
+     */
     public function updateProfile($first_name = null, $last_name = null, $username = null) {
         $stmt = $this->pdo->prepare("
             UPDATE users
@@ -293,14 +373,23 @@ class User {
         $this->loadUser();
     }
 
+    /**
+     * دریافت شناسه کاربر
+     */
     public function getId() {
         return $this->user_data['id'] ?? null;
     }
 
+    /**
+     * دریافت تلگرام آی‌دی
+     */
     public function getTelegramId() {
         return $this->telegram_id;
     }
 
+    /**
+     * دریافت موجودی کیف پول
+     */
     public function getBalance() {
         $stmt = $this->pdo->prepare("SELECT balance FROM wallets WHERE user_id = ?");
         $stmt->execute([$this->getId()]);
@@ -308,10 +397,17 @@ class User {
         return $result['balance'] ?? 0;
     }
 
+    /**
+     * بررسی داشتن موجودی کافی (فقط برای نمایش به کاربر مناسب است،
+     * برای تصمیم واقعی کم کردن پول از subtractBalance اتمیک استفاده کنید)
+     */
     public function hasEnoughBalance($amount) {
         return $this->getBalance() >= $amount;
     }
 
+    /**
+     * افزایش موجودی
+     */
     public function addBalance($amount, $description = '', $transaction_type = 'deposit', $reference_id = null, $reference_type = null) {
         if ($amount <= 0) {
             return false;
@@ -352,6 +448,14 @@ class User {
         }
     }
 
+    /**
+     * کاهش موجودی (نسخه اتمیک - جلوگیری از race condition)
+     *
+     * به جای «چک کن سپس کم کن» که بین این دو مرحله یک درخواست همزمان
+     * می‌توانست از چک رد شود، اینجا شرط balance >= amount مستقیماً
+     * داخل خودِ UPDATE گذاشته شده. اگر ردیفی تغییر نکند (rowCount == 0)
+     * یعنی موجودی کافی نبوده و تراکنش rollback می‌شود.
+     */
     public function subtractBalance($amount, $description = '', $transaction_type = 'withdrawal', $reference_id = null, $reference_type = null) {
         if ($amount <= 0) {
             return false;
@@ -368,6 +472,7 @@ class User {
             $stmt->execute([$amount, $amount, $this->getId(), $amount]);
 
             if ($stmt->rowCount() === 0) {
+                // موجودی کافی نبود (یا در همین لحظه توسط درخواست دیگری مصرف شده بود)
                 $this->pdo->rollBack();
                 return false;
             }
@@ -397,32 +502,63 @@ class User {
         }
     }
 
+    /**
+     * بررسی ادمین بودن کاربر
+     */
     public function isAdmin() {
         return (bool) ($this->user_data['is_admin'] ?? false);
     }
 
+    /**
+     * بررسی مسدود بودن کاربر
+     */
     public function isBlocked() {
         return (bool) ($this->user_data['is_blocked'] ?? false);
     }
 
+    /**
+     * مسدود کردن کاربر
+     */
     public function block() {
         $stmt = $this->pdo->prepare("UPDATE users SET is_blocked = TRUE WHERE id = ?");
         $stmt->execute([$this->getId()]);
         $this->loadUser();
     }
 
+    /**
+     * رفع مسدودیت کاربر
+     */
     public function unblock() {
         $stmt = $this->pdo->prepare("UPDATE users SET is_blocked = FALSE WHERE id = ?");
         $stmt->execute([$this->getId()]);
         $this->loadUser();
     }
 
+    /**
+     * دریافت تمام اطلاعات کاربر
+     */
     public function getAllData() {
         return $this->user_data;
     }
 }
 
 // ==================== Wallet.php ====================
+/**
+ * کلاس Wallet - مدیریت کیف پول
+ * Wallet Class - Wallet Management
+ *
+ * نکته مهم: فایل اصلی که فرستادید دقیقاً وسط متد deposit() قطع شده بود
+ * (به نظر می‌رسد در انتقال فایل از موبایل بریده شده - همان مشکل تکراری
+ * file truncation که قبلاً هم داشتید). این نسخه کامل شده و همان باگ
+ * race condition که در User.php رفع شد، اینجا هم برای withdraw اعمال شده.
+ *
+ * همچنین: این کلاس دقیقاً همان کاری را می‌کند که متدهای addBalance/
+ * subtractBalance در User.php انجام می‌دهند. داشتن دو پیاده‌سازی جدا
+ * برای یک منطق مالی خطرناک است، چون اگر بعداً یکی را اصلاح کنید و
+ * دیگری را فراموش کنید، رفتار ناسازگار پیش می‌آید. پیشنهاد: فقط یکی
+ * از این دو کلاس را برای عملیات کیف پول نگه دارید.
+ */
+
 class Wallet {
     private $pdo;
     private $user_id;
@@ -432,6 +568,9 @@ class Wallet {
         $this->user_id = $user_id;
     }
 
+    /**
+     * دریافت موجودی
+     */
     public function getBalance() {
         $stmt = $this->pdo->prepare("SELECT balance FROM wallets WHERE user_id = ?");
         $stmt->execute([$this->user_id]);
@@ -439,6 +578,9 @@ class Wallet {
         return $result['balance'] ?? 0;
     }
 
+    /**
+     * افزایش موجودی با تراکنش
+     */
     public function deposit($amount, $description = '', $transaction_type = 'deposit', $reference_id = null, $reference_type = null) {
         if ($amount <= 0) {
             return false;
@@ -479,6 +621,9 @@ class Wallet {
         }
     }
 
+    /**
+     * کاهش موجودی با تراکنش (نسخه اتمیک، همان اصلاح User::subtractBalance)
+     */
     public function withdraw($amount, $description = '', $transaction_type = 'withdrawal', $reference_id = null, $reference_type = null) {
         if ($amount <= 0) {
             return false;
@@ -524,6 +669,9 @@ class Wallet {
         }
     }
 
+    /**
+     * تاریخچه تراکنش‌های این کاربر
+     */
     public function getTransactionHistory($limit = 20) {
         $stmt = $this->pdo->prepare("
             SELECT * FROM wallet_transactions
@@ -539,6 +687,20 @@ class Wallet {
 }
 
 // ==================== Game.php ====================
+/**
+ * کلاس Game - مدیریت میز بازی تاس
+ *
+ * نسخه‌ی MVP (ساده‌شده نسبت به کل schema):
+ * - هر میز یک راند دارد (num_rounds ثابت = 1) و هر طرف یک تاس می‌اندازد
+ *   (num_dice ثابت = 1). ستون‌های num_dice/num_rounds در جدول برای
+ *   توسعه‌ی آینده (چند راند/چند تاس) نگه داشته شده‌اند اما فعلاً استفاده
+ *   کامل نمی‌شوند - می‌توانید بعداً یک حلقه‌ی round دور همین منطق اضافه کنید.
+ * - برنده کل مبلغ شرط دو طرف منهای کارمزد (COMMISSION_PERCENTAGE) را می‌برد.
+ * - مبلغ شرط لیدر همان لحظه‌ی ساخت میز از کیف پولش کم می‌شود (رزرو)،
+ *   نه در پایان بازی. این جلوی حالتی را می‌گیرد که لیدر میز بسازد،
+ *   پول را جای دیگری خرج کند و وقتی حریف پیدا شد پول کافی نداشته باشد.
+ */
+
 class Game {
     private $pdo;
 
@@ -546,15 +708,20 @@ class Game {
         $this->pdo = $pdo;
     }
 
+    /**
+     * ساخت میز جدید و رزرو کردن مبلغ شرط از لیدر
+     * @return int|false شناسه‌ی میز یا false در صورت موجودی ناکافی
+     */
     public function createTable($leaderUser, $betAmount) {
         if ($betAmount <= 0) {
             return false;
         }
 
+        // رزرو مبلغ شرط از همین الان (اتمیک - همان تابع اصلاح‌شده subtractBalance)
         $reserved = $leaderUser->subtractBalance(
             $betAmount,
             'رزرو شرط برای ساخت میز بازی',
-            'game_loss',
+            'game_loss', // موقتاً به عنوان کسر ثبت می‌شود؛ اگر لیدر برنده شد در finishRound برگردانده می‌شود
             null,
             'game_table_reserve'
         );
@@ -572,12 +739,18 @@ class Game {
         return (int) $this->pdo->lastInsertId();
     }
 
+    /**
+     * دریافت اطلاعات میز
+     */
     public function getTable($tableId) {
         $stmt = $this->pdo->prepare("SELECT * FROM game_tables WHERE id = ?");
         $stmt->execute([$tableId]);
         return $stmt->fetch();
     }
 
+    /**
+     * لغو میزی که هنوز کسی جوینش نشده - مبلغ رزرو شده به لیدر برمی‌گردد
+     */
     public function cancelTable($tableId, $leaderUser) {
         $table = $this->getTable($tableId);
         if (!$table || $table['status'] !== 'waiting' || (int) $table['leader_id'] !== (int) $leaderUser->getId()) {
@@ -591,13 +764,17 @@ class Game {
         return true;
     }
 
+    /**
+     * پیوستن نفر دوم به میز - مبلغ شرط او هم رزرو می‌شود
+     * @return bool
+     */
     public function joinTable($tableId, $memberUser) {
         $table = $this->getTable($tableId);
         if (!$table || $table['status'] !== 'waiting') {
-            return false;
+            return false; // میز وجود ندارد یا قبلاً پر/لغو شده
         }
         if ((int) $table['leader_id'] === (int) $memberUser->getId()) {
-            return false;
+            return false; // نمی‌تواند با خودش بازی کند
         }
 
         $reserved = $memberUser->subtractBalance(
@@ -611,6 +788,8 @@ class Game {
             return false;
         }
 
+        // به صورت اتمیک فقط اگر هنوز waiting است عضو را ثبت کن
+        // (جلوگیری از race condition اگر دو نفر همزمان دکمه‌ی پیوستن را بزنند)
         $stmt = $this->pdo->prepare("
             UPDATE game_tables
             SET member_id = ?, status = 'in_progress', updated_at = NOW()
@@ -619,6 +798,7 @@ class Game {
         $stmt->execute([$memberUser->getId(), $tableId]);
 
         if ($stmt->rowCount() === 0) {
+            // یکی دیگر زودتر جوین شد - پول رزرو شده را برگردان
             $memberUser->addBalance($table['bet_amount'], 'بازگشت مبلغ رزرو - میز پر شد', 'game_win', $tableId, 'game_table_reserve');
             return false;
         }
@@ -626,6 +806,13 @@ class Game {
         return true;
     }
 
+    /**
+     * ثبت نتیجه‌ی تاس یک بازیکن برای یک میز و تلاش برای تعیین برنده
+     * وقتی هر دو طرف تاسشان را انداختند فراخوانی این متد نتیجه را می‌بندد.
+     *
+     * @return array|null اگر بازی هنوز کامل نشده null، وگرنه
+     *                     ['winner_id' => int|null, 'leader_value' => int, 'member_value' => int]
+     */
     public function submitDiceRoll($tableId, $userDbId, $diceValue) {
         $table = $this->getTable($tableId);
         if (!$table || $table['status'] !== 'in_progress') {
@@ -640,6 +827,7 @@ class Game {
 
         $column = $isLeader ? 'leader_total' : 'member_total';
 
+        // یک ردیف game_rounds برای این میز پیدا/بساز (چون فقط ۱ راند داریم، round_number=1)
         $stmt = $this->pdo->prepare("SELECT * FROM game_rounds WHERE game_table_id = ? AND round_number = 1");
         $stmt->execute([$tableId]);
         $round = $stmt->fetch();
@@ -652,6 +840,7 @@ class Game {
             $insert->execute([$tableId, $diceValue]);
             $roundId = (int) $this->pdo->lastInsertId();
         } else {
+            // اگر این بازیکن قبلاً تاس انداخته دوباره قبول نکن
             if ((int) $round[$column] > 0) {
                 return null;
             }
@@ -660,12 +849,14 @@ class Game {
             $roundId = $round['id'];
         }
 
+        // ثبت نتیجه تاس خام (برای شفافیت/تاریخچه)
         $diceStmt = $this->pdo->prepare("
             INSERT INTO dice_results (game_round_id, user_id, dice_value, dice_position, created_at)
             VALUES (?, ?, ?, 1, NOW())
         ");
         $diceStmt->execute([$roundId, $userDbId, $diceValue]);
 
+        // بررسی این‌که آیا هر دو طرف تاس انداخته‌اند
         $stmt = $this->pdo->prepare("SELECT * FROM game_rounds WHERE id = ?");
         $stmt->execute([$roundId]);
         $round = $stmt->fetch();
@@ -674,9 +865,12 @@ class Game {
             return $this->finishRound($table, $round);
         }
 
-        return null;
+        return null; // هنوز منتظر تاس نفر دوم هستیم
     }
 
+    /**
+     * تعیین برنده و تسویه‌ی مبلغ شرط (پس از کسر کارمزد)
+     */
     private function finishRound($table, $round) {
         $tableId = $table['id'];
         $leaderTotal = (int) $round['leader_total'];
@@ -688,12 +882,14 @@ class Game {
         } elseif ($memberTotal > $leaderTotal) {
             $winnerId = $table['member_id'];
         }
+        // در صورت مساوی winnerId=null می‌ماند و هر دو پول رزرو شده‌شان را پس می‌گیرند
 
         $pot = $table['bet_amount'] * 2;
         $commission = (int) floor($pot * (COMMISSION_PERCENTAGE / 100));
         $payout = $pot - $commission;
 
         if ($winnerId === null) {
+            // مساوی: به هرکس مبلغ شرط خودش (بدون کارمزد) برگردد
             $leaderUser = new User($this->pdo, $this->getTelegramIdByDbId($table['leader_id']));
             $memberUser = new User($this->pdo, $this->getTelegramIdByDbId($table['member_id']));
             $leaderUser->addBalance($table['bet_amount'], 'مساوی - بازگشت شرط', 'game_win', $tableId, 'game_table');
@@ -701,6 +897,7 @@ class Game {
         } else {
             $winnerTelegramId = $this->getTelegramIdByDbId($winnerId);
             $winnerUser = new User($this->pdo, $winnerTelegramId);
+            // چون مبلغ شرط خودِ برنده از قبل رزرو (کسر) شده بود، الان کل pot منهای کارمزد را به او می‌دهیم
             $winnerUser->addBalance($payout, 'برد بازی تاس', 'game_win', $tableId, 'game_table');
         }
 
@@ -727,11 +924,36 @@ class Game {
 }
 
 // ==================== Coupon.php ====================
+/**
+ * کلاس Coupon - ساخت و استفاده‌ی کد کوپن (شارژ کیف پول)
+ */
+
 class Coupon {
     private $pdo;
 
     public function __construct($pdo) {
-        $this->pdo = $pdo;public function redeem($code, $user) {
+        $this->pdo = $pdo;
+    }
+
+    /**
+     * ساخت کوپن جدید (فقط ادمین)
+     */
+    public function create($amount, $creatorUserId, $code = null) {
+        $code = $code ?: strtoupper(bin2hex(random_bytes(5))); // مثلاً A1B2C3D4E5
+
+        $stmt = $this->pdo->prepare("
+            INSERT INTO coupons (code, amount, created_by, created_at)
+            VALUES (?, ?, ?, NOW())
+        ");
+        $stmt->execute([$code, $amount, $creatorUserId]);
+        return $code;
+    }
+
+    /**
+     * استفاده از کوپن توسط یک کاربر
+     * @return array ['success' => bool, 'message' => string, 'amount' => int|null]
+     */
+    public function redeem($code, $user) {
         $stmt = $this->pdo->prepare("SELECT * FROM coupons WHERE code = ?");
         $stmt->execute([$code]);
         $coupon = $stmt->fetch();
@@ -740,6 +962,7 @@ class Coupon {
             return ['success' => false, 'message' => 'کد کوپن نامعتبر است.', 'amount' => null];
         }
 
+        // بررسی این‌که همین کاربر قبلاً از این کوپن استفاده نکرده باشد
         $check = $this->pdo->prepare("SELECT id FROM coupon_redemptions WHERE coupon_id = ? AND user_id = ?");
         $check->execute([$coupon['id'], $user->getId()]);
         if ($check->fetch()) {
@@ -749,6 +972,9 @@ class Coupon {
         try {
             $this->pdo->beginTransaction();
 
+            // درج اتمیک رکورد استفاده - چون UNIQUE KEY(coupon_id, user_id) داریم،
+            // اگر دو درخواست همزمان برسند دومی با خطای duplicate key رد می‌شود
+            // (این جلوی race condition در ریدیم هم‌زمان را می‌گیرد)
             $insertRedemption = $this->pdo->prepare("
                 INSERT INTO coupon_redemptions (coupon_id, user_id, redeemed_at)
                 VALUES (?, ?, NOW())
@@ -768,22 +994,41 @@ class Coupon {
 }
 
 // ==================== webhook.php ====================
+/**
+ * webhook.php - نقطه‌ی ورودی تلگرام
+ *
+ * این فایل رو روی هاست آپلود کنید و آدرسش رو (همون که در WEBHOOK_URL گذاشتید)
+ * با یه درخواست یک‌بار مصرف به تلگرام معرفی کنید، مثلاً با باز کردن این
+ * آدرس در مرورگر (فقط یک‌بار لازم است):
+ *
+ * https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://yourdomain.com/webhook.php&secret_token=<WEBHOOK_SECRET>
+ *
+ * نکته: مقدار <WEBHOOK_SECRET> باید دقیقاً همان چیزی باشد که در
+ * Environment Variable با نام WEBHOOK_SECRET ست کرده‌اید.
+ */
+
 
 $telegram = new TelegramAPI(BOT_TOKEN);
 
+// --- ۱) اعتبارسنجی درخواست (جلوگیری از جعل وبهوک) ---
 if (WEBHOOK_SECRET !== '' && !$telegram->verifyWebhookSecret(WEBHOOK_SECRET)) {
     http_response_code(403);
     exit('forbidden');
 }
 
+// --- ۲) خواندن آپدیت خام از تلگرام ---
 $raw = file_get_contents('php://input');
 $update = json_decode($raw, true);
 
 if (!$update) {
-    http_response_code(200);
+    http_response_code(200); // به تلگرام 200 بده حتی اگر بدنه خالی/نامعتبر بود
     exit;
 }
 
+// --- ۳) الگوی safe_answer برای callback_query ---
+// طبق تجربه‌ی قبلی‌تون: اگه answerCallbackQuery دوبار روی یک آپدیت صدا زده بشه
+// (مثلاً یه بار داخل هندلر و یه بار در catch)، تلگرام خطای "query is too old"
+// می‌ده. این پرچم مطمئن می‌شه فقط یک‌بار پاسخ داده می‌شود.
 $callbackAnswered = false;
 function safe_answer($telegram, $callbackQueryId, $text = null, $showAlert = false) {
     global $callbackAnswered;
@@ -804,11 +1049,20 @@ try {
     if (DEBUG_MODE) {
         error_log('Webhook error: ' . $e->getMessage());
     }
+    // در هر حالت به تلگرام 200 برگردون تا آپدیت را دوباره و دوباره ارسال نکند
 }
 
 http_response_code(200);
 exit;
 
+
+// ============================================================
+// هندلرها
+// ============================================================
+
+/**
+ * پیام‌های متنی (/start, /help, دکمه‌های reply keyboard و ...)
+ */
 function handleMessage($pdo, $telegram, $message) {
     $chatId = $message['chat']['id'];
     $telegramId = $message['from']['id'];
@@ -839,6 +1093,8 @@ function handleMessage($pdo, $telegram, $message) {
         return;
     }
 
+    // اگر منتظر ورودی کوپن هستیم (state ساده - بدون جدول جدا، فقط برای MVP)
+    // برای پروداکشن پیشنهاد می‌شود یک ستون/جدول state واقعی اضافه کنید.
     if (preg_match('/^[A-Za-z0-9]{6,20}$/', $text) && strtoupper($text) === $text) {
         $coupon = new Coupon($pdo);
         $result = $coupon->redeem($text, $user);
@@ -853,6 +1109,9 @@ function handleMessage($pdo, $telegram, $message) {
     $telegram->sendMessage('دستور نامشخص. برای شروع /start را بزنید.', $chatId);
 }
 
+/**
+ * کلیک روی دکمه‌های اینلاین
+ */
 function handleCallbackQuery($pdo, $telegram, $callbackQuery) {
     global $callbackAnswered;
 
@@ -907,6 +1166,9 @@ function handleCallbackQuery($pdo, $telegram, $callbackQuery) {
         }
 
         safe_answer($telegram, $callbackId, '✅ میز ساخته شد.');
+        // این پیام رو در گروه بفرستید تا بقیه بتونن با دکمه‌ی «پیوستن» وارد بازی بشن.
+        // اگه ربات فقط توی چت خصوصی استفاده می‌شه، باید این پیام رو به یه گروه هم فوروارد کنید
+        // یا لینک دعوت به چت خصوصی با پارامتر tableId بسازید.
         $telegram->sendMessage(
             "🎲 میز شرط {$amount} سکه‌ای ساخته شد.\nهرکس می‌خواهد بازی کند «پیوستن» را بزند:",
             $chatId,
@@ -939,8 +1201,11 @@ function handleCallbackQuery($pdo, $telegram, $callbackQuery) {
         $table = $game->getTable($tableId);
         $rollKeyboard = TelegramAPI::inlineKeyboard([[TelegramAPI::inlineButton('🎲 انداختن تاس', 'roll:' . $tableId)]]);
 
+        // به حریف (کسی که همین الان پیوست) بگو تاس بیندازد
         $telegram->sendMessage('🎲 حریف پیدا شد! برای انداختن تاس دکمه زیر را بزنید:', $chatId, $rollKeyboard);
 
+        // به لیدر میز هم جدا اطلاع بده و دکمه‌ی تاس بفرست
+        // (chat_id خصوصی همیشه با telegram_id کاربر برابر است، پس نیازی به getChat نیست)
         $leaderTelegramId = get_telegram_id_by_db_id($pdo, $table['leader_id']);
         if ($leaderTelegramId) {
             $telegram->sendMessage('🎲 حریف پیدا شد! برای انداختن تاس دکمه زیر را بزنید:', $leaderTelegramId, $rollKeyboard);
@@ -967,6 +1232,7 @@ function handleCallbackQuery($pdo, $telegram, $callbackQuery) {
             return;
         }
 
+        // بازی تمام شد - به هر دو طرف اعلام کن
         $table = $game->getTable($tableId);
         $winnerText = $result['winner_id'] === null
             ? '🤝 مساوی شد! مبلغ شرط هر دو طرف بازگردانده شد.'
@@ -984,10 +1250,14 @@ function handleCallbackQuery($pdo, $telegram, $callbackQuery) {
     }
 }
 
+/**
+ * پیدا کردن telegram_id از روی شناسه‌ی داخلی جدول users (برای فرستادن پیام
+ * به طرف دیگر بازی که در همین لحظه کاربر فعال webhook نیست)
+ */
 function get_telegram_id_by_db_id($pdo, $dbId) {
     $stmt = $pdo->prepare('SELECT telegram_id FROM users WHERE id = ?');
     $stmt->execute([$dbId]);
     $row = $stmt->fetch();
     return $row['telegram_id'] ?? null;
 }
-    }
+
